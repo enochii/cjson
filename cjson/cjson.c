@@ -2,7 +2,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include <stdlib.h>  
-#include <crtdbg.h>
+//#include <crtdbg.h>
 
 #ifndef CJSON_PARSE_STACK_INIT_SIZE
 #define CJSON_PARSE_STACK_INIT_SIZE 256
@@ -26,11 +26,11 @@
 #define ISDIGIT1TO9(ch) ((ch) >= '1' && (ch) <= '9')
 
 //copy the pointer to be able to increment the ptr when pass the json
-//context through the function
+//context through the functions
 typedef struct {
 	const char* json;
 	char* stack;
-	//use unsigned not char_ptr cause the mem of stack is dynamic
+	//use unsigned not char_ptr cause the mem of stack is dynamic,
 	//when realloc new mem the top will be invalid
 	size_t size, top;
 } cjson_context;
@@ -91,49 +91,7 @@ static void cjson_parse_whitespace(cjson_context* c)
 	c->json = p;
 }
 
-//old codes
-/*
-static int cjson_parse_null(cjson_value* v, cjson_context* c)
-{
-	EXPECT(c, 'n');
-
-	if (c->json[0] != 'u' || c->json[1] != 'l' || c->json[2] != 'l')
-		return CJSON_PARRSE_INVALID_VALUE;
-
-	c->json += 3;
-	v->type = CJSON_NULL;
-	return CJSON_PARSE_OK;
-}
-
-
-static int cjson_parse_false(cjson_value* v, cjson_context* c)
-{
-	EXPECT(c, 'f');
-
-	const char* p = c->json;
-	if (p[0] != 'a' || p[1] != 'l' || p[2] != 's' || p[3] != 'e') {
-		return CJSON_PARRSE_INVALID_VALUE;
-	}
-	c->json += 4;
-	v->type = CJSON_FALSE;
-	return CJSON_PARSE_OK;
-}
-
-static int cjson_parse_true(cjson_value* v, cjson_context *c)
-{
-	EXPECT(c, 't');
-
-	const char *p = c->json;
-	if (p[0] != 'r' || p[1] != 'u' || p[2] != 'e') {
-		return CJSON_PARRSE_INVALID_VALUE;
-	}
-
-	c->json += 3;
-	v->type = CJSON_TRUE;
-	return CJSON_PARSE_OK;
-}
-*/
-
+//null / false / true
 static int cjson_parse_literal(cjson_value* v, cjson_context* c, 
 	const char* literal_str, cjson_type literal_type)//generalize
 {	
@@ -151,6 +109,7 @@ static int cjson_parse_literal(cjson_value* v, cjson_context* c,
 }
 //
 static int cjson_parse_string(cjson_value* v, cjson_context* c);
+static int cjson_parse_array(cjson_value* v, cjson_context*c);
 static int cjson_parse_value(cjson_value* v, cjson_context* c)
 {
 	switch (c->json[0]) {
@@ -159,6 +118,7 @@ static int cjson_parse_value(cjson_value* v, cjson_context* c)
 	case 't':return cjson_parse_literal(v, c, "true", CJSON_TRUE);
 	case '\0':return CJSON_PARSE_EXPECT_VALUE;
 	case '\"':return cjson_parse_string(v, c);
+	case '[':return cjson_parse_array(v, c);
 	default:return cjson_parse_number(v, c);
 	}
 }
@@ -450,4 +410,101 @@ static int cjson_parse_string(cjson_value* v, cjson_context* c)
 			PUTC(c, ch);
 		}
 	}
+}
+
+
+static int cjson_parse_array(cjson_value* v, cjson_context* c)
+{
+	//先忽略错误处理
+	EXPECT(c, '[');
+	cjson_parse_whitespace(c);
+	//
+	cjson_value temp_v;//temporarily store the array element in the below loop
+	unsigned array_size = 0, old_top = c->top;
+	
+	//char *p = c->json;
+	for (;;) {
+		cjson_parse_whitespace(c);
+		switch (*c->json)
+		{
+		case '\0':
+			c->top = old_top;
+			return CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET;//miss the right bracket
+		//case ',':
+			//comma should follow an element
+		case ']':
+			v->type = CJSON_ARRAY;
+			v->array_size = array_size;
+			if (array_size > 0) {
+#ifdef DEBUG
+				printf("array size: %d\n", array_size);
+#endif // DEBUG
+				//naive..... 
+				//v->arr = (cjson_value*)cjson_context_pop(c, 
+				//	array_size * sizeof(cjson_value)
+				//);
+				unsigned len = array_size * sizeof(cjson_value);
+				v->arr = malloc(len);
+				memcpy(v->arr, cjson_context_pop(c, len), len);
+			}
+			//c->stack = NULL;
+			c->json++;
+			return CJSON_PARSE_OK;//done
+		default:
+			//array element
+			//还要考虑ws
+			cjson_init(&temp_v);
+			int ret = cjson_parse_value(&temp_v, c);
+			//
+			if (CJSON_PARSE_OK == ret) {
+				//
+				//WARNING: now we should also consider json object like "[1.22KL]", "[1.22K,1]"
+				//
+				//for (;*p != '\0';p++)if (*p == ']' || *p == ',')break;
+				*((cjson_value*)cjson_context_push(c, sizeof(cjson_value))) = temp_v;
+				array_size++;
+				cjson_parse_whitespace(c);
+				switch (*c->json) {
+				case ']':
+					continue;//process the next for-loop outside
+					//break;
+				case ',':
+					c->json++;
+					if (*c->json == ']') {
+						c->top = old_top;
+						return CJSON_PARSE_INVALID_VALUE;
+							//CJSON_PARSE_ARRAY_EXTRA_COMMA;//ERROR -> extra comma in the end
+					}
+					break;
+				default:
+					c->top = old_top;
+					return CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET;
+				}
+			}
+			else {
+				c->top = old_top;
+				return ret;
+			}
+
+			break;
+		}
+		//NOT_SINGULAR don't need to be done here
+		//c->json++;
+	}
+}
+
+
+size_t get_array_size(const cjson_value* v)
+{
+	assert(v != NULL && v->type == CJSON_ARRAY);
+	return v->array_size;
+}
+
+//下表从0开始
+cjson_value* get_array_element(cjson_value* v, size_t index)
+{
+	assert(v != NULL && v->type == CJSON_ARRAY);
+	assert(index < v->array_size);
+	//code like : return &v->arr[0]; doesnt work... //error -> expression must be a pointer to a complete object type
+	return &(((cjson_value*)v->arr)[index]);
 }

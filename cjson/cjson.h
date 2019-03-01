@@ -23,16 +23,20 @@ enum {
 	CJSON_PARSE_INVALID_STRING_ESCAPE,
 	CJSON_PARSE_INVALID_STRING_CHAR,
 	CJSON_PARSE_INVALID_UNICODE_HEX,
-	CJSON_PARSE_INVALID_UNICODE_SURROGATE
+	CJSON_PARSE_INVALID_UNICODE_SURROGATE,
+	CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET,
+	CJSON_PARSE_ARRAY_EXTRA_COMMA,//extra comma in the end, like [1,2,]
 };
 
-typedef struct {
+typedef struct cjson_value cjson_value;
+struct cjson_value {
 	cjson_type type;
 	union {
+		struct { cjson_value* arr;size_t array_size; };
 		struct { char* s;size_t len; };//
 		double n;//存储number的数值
 	};
-}cjson_value;
+};
 
 //cjson_value由用户提供
 int cjson_parse(cjson_value* v, const char* json);
@@ -53,5 +57,8 @@ void set_boolean(cjson_value* v, int b);
 const char* get_string(const cjson_value* v);
 unsigned get_string_length(const cjson_value* v);
 void set_string(cjson_value* v, const char* s, unsigned len);
+
+size_t get_array_size(const cjson_value* v);
+cjson_value* get_array_element(cjson_value* v, size_t index);
 
 #endif	/*CJSON_H_*/

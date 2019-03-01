@@ -2,7 +2,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include <stdlib.h>  
-#include <crtdbg.h>
+//#include <crtdbg.h>
 
 #include <stdio.h>
 #include "cjson.h"
@@ -168,6 +168,10 @@ static void test_parse_invalid_value()
 	v.type = CJSON_FALSE;
 	EXPECT_EQ_INT(CJSON_PARSE_INVALID_VALUE, cjson_parse(&v, "nul"));
 	EXPECT_EQ_INT(CJSON_PARSE_INVALID_VALUE, cjson_parse(&v, "?"));
+
+	TEST_ERROR(CJSON_PARSE_INVALID_VALUE, "[,]");
+	TEST_ERROR(CJSON_PARSE_INVALID_VALUE, "[1,]");
+	TEST_ERROR(CJSON_PARSE_INVALID_VALUE, "[\"a\", nul]");
 	
 	//invalid number
 #if 1
@@ -274,6 +278,70 @@ static void test_parse_invalid_unicode_surrogate() {
 	TEST_ERROR(CJSON_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uD800\\uE000\"");
 }
 
+static void test_parse_array()
+{
+	cjson_value v;
+	cjson_init(&v);
+	EXPECT_EQ_INT(CJSON_PARSE_OK, cjson_parse(&v, "[]"));
+	EXPECT_EQ_INT(CJSON_ARRAY, v.type);
+	EXPECT_EQ_INT(0, v.array_size);
+	//
+
+	cjson_init(&v);
+	EXPECT_EQ_INT(CJSON_PARSE_OK, cjson_parse(&v, "[1]"));
+	EXPECT_EQ_INT(CJSON_ARRAY, v.type);
+	EXPECT_EQ_INT(1, v.array_size);
+	EXPECT_EQ_INT(CJSON_NUMBER, get_array_element(&v, 0)->type);
+	EXPECT_EQ_DOUBLE(1.0, get_array_element(&v, 0)->n);
+#if 1
+
+	cjson_init(&v);
+	EXPECT_EQ_INT(CJSON_PARSE_OK, cjson_parse(&v, "[  ]"));
+	EXPECT_EQ_INT(CJSON_ARRAY, get_type(&v));
+	//EXPECT_EQ_SIZE_T(0, lept_get_array_size(&v));
+	EXPECT_EQ_INT(0, v.array_size);
+
+	cjson_init(&v);
+	EXPECT_EQ_INT(CJSON_PARSE_OK, cjson_parse(&v, "[ 3   ,2   ]"));
+	EXPECT_EQ_INT(CJSON_ARRAY, v.type);
+	EXPECT_EQ_INT(2, v.array_size);
+	EXPECT_EQ_INT(CJSON_NUMBER, get_array_element(&v, 0)->type);
+	EXPECT_EQ_DOUBLE(3.0, get_array_element(&v, 0)->n);
+	EXPECT_EQ_DOUBLE(2.0, get_array_element(&v, 1)->n);
+
+	cjson_init(&v);
+	EXPECT_EQ_INT(CJSON_PARSE_OK, cjson_parse(&v, "[1, \"1\", [1,2, 3 ,4,[]] ]"));
+	EXPECT_EQ_INT(CJSON_ARRAY, v.type);
+	EXPECT_EQ_INT(3, v.array_size);
+	EXPECT_EQ_INT(CJSON_NUMBER, get_array_element(&v, 0)->type);
+	EXPECT_EQ_DOUBLE(1.0, get_array_element(&v, 0)->n);
+	EXPECT_EQ_INT(CJSON_ARRAY, get_array_element(&v, 2)->type);
+	EXPECT_EQ_INT(5, get_array_element(&v, 2)->array_size);
+	//EXPECT_EQ_DOUBLE(3.0, get_array_element(&v, 2)->n);
+	EXPECT_EQ_INT(CJSON_STRING, get_array_element(&v, 1)->type);
+	("1", get_array_element(&v, 1)->s, 1);
+#endif // 
+	cjson_free(&v);
+}
+
+static void test_parse_miss_comma_or_square_bracket() {
+#if 1
+	TEST_ERROR(CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET, "[1");
+	TEST_ERROR(CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET, "[1}");
+	TEST_ERROR(CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET, "[1 2");
+	TEST_ERROR(CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET, "[[]");
+#endif
+}
+//milo's tutorial include it in INVALID_VALUE, that's better than my solution, cause we have case like [,]
+//though we can do specified thing to it, but i prefer to follow milo's, cause i'm lazy...
+/*
+static void test_parse_array_extra_comma() {
+	TEST_ERROR(CJSON_PARSE_ARRAY_EXTRA_COMMA, "[1,2,]");
+	TEST_ERROR(CJSON_PARSE_ARRAY_EXTRA_COMMA, "[1,]");
+	TEST_ERROR(CJSON_PARSE_ARRAY_EXTRA_COMMA, "[,]");
+}
+*/
+
 void test_parse()
 {
 	test_parse_null();
@@ -293,6 +361,9 @@ void test_parse()
 	test_parse_invalid_unicode_hex();
 	test_parse_invalid_unicode_surrogate();
 	/**/
+	test_parse_array();
+	test_parse_miss_comma_or_square_bracket();
+	//test_parse_array_extra_comma();
 
 	if (main_ret == 0) {
 		printf("ok no problem!\n");
@@ -302,7 +373,7 @@ void test_parse()
 int main()
 {
 	malloc(sizeof(char));
-	_CrtDumpMemoryLeaks();
+	//_CrtDumpMemoryLeaks();
 	//printf("%d %d", sizeof(char), sizeof('\n'));
 	test_parse();
 
