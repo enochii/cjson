@@ -322,7 +322,7 @@ static void test_parse_array()
 	EXPECT_EQ_INT(5, get_array_element(&v, 2)->array_size);
 	//EXPECT_EQ_DOUBLE(3.0, get_array_element(&v, 2)->n);
 	EXPECT_EQ_INT(CJSON_STRING, get_array_element(&v, 1)->type);
-	("1", get_array_element(&v, 1)->s, 1);
+	EXPECT_EQ_STRING("1", get_array_element(&v, 1)->s, 1);
 #endif // 
 	cjson_free(&v);
 }
@@ -332,6 +332,7 @@ static void test_parse_miss_comma_or_square_bracket() {
 	TEST_ERROR(CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET, "[1");
 	TEST_ERROR(CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET, "[1}");
 	TEST_ERROR(CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET, "[1 2");
+	TEST_ERROR(CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET, "[[1]");
 	TEST_ERROR(CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET, "[[]");
 #endif
 }

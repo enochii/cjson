@@ -459,24 +459,23 @@ static int cjson_parse_string(cjson_value* v, cjson_context* c)
 
 static int cjson_parse_array(cjson_value* v, cjson_context* c)
 {
-	//先忽略错误处理
 	EXPECT(c, '[');
 	cjson_parse_whitespace(c);
 	//
 	cjson_value temp_v;//temporarily store the array element in the below loop
 	unsigned array_size = 0, old_top = c->top;
-	
+	int ret;
+
 	//char *p = c->json;
 	for (;;) {
 		cjson_parse_whitespace(c);
-		switch (*c->json)
-		{
-		case '\0':
-			c->top = old_top;
-			return CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET;//miss the right bracket
-		//case ',':
-			//comma should follow an element
-		case ']':
+		//switch (*c->json){
+		if (*c->json == '\0') {
+			//c->top = old_top;
+			ret = CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET;//miss the right bracket
+			break;
+		}
+		else if (*c->json == ']') {
 			v->type = CJSON_ARRAY;
 			v->array_size = array_size;
 			if (array_size > 0) {
@@ -491,50 +490,56 @@ static int cjson_parse_array(cjson_value* v, cjson_context* c)
 				v->arr = malloc(len);
 				memcpy(v->arr, cjson_context_pop(c, len), len);
 			}
+			else v->arr = NULL;//remember to init............................................................................
 			//c->stack = NULL;
 			c->json++;
 			return CJSON_PARSE_OK;//done
-		default:
+		}
+		else {
 			//array element
 			//还要考虑ws
 			cjson_init(&temp_v);
-			int ret = cjson_parse_value(&temp_v, c);
+			ret = cjson_parse_value(&temp_v, c);
 			//
 			if (CJSON_PARSE_OK == ret) {
 				//
 				//WARNING: now we should also consider json object like "[1.22KL]", "[1.22K,1]"
 				//
-				//for (;*p != '\0';p++)if (*p == ']' || *p == ',')break;
 				*((cjson_value*)cjson_context_push(c, sizeof(cjson_value))) = temp_v;
 				array_size++;
 				cjson_parse_whitespace(c);
-				switch (*c->json) {
-				case ']':
+				//switch (*c->json) {
+				if (*c->json == ']')
 					continue;//process the next for-loop outside
 					//break;
-				case ',':
+				else if (*c->json == ',') {
 					c->json++;
 					if (*c->json == ']') {
-						c->top = old_top;
-						return CJSON_PARSE_INVALID_VALUE;
-							//CJSON_PARSE_ARRAY_EXTRA_COMMA;//ERROR -> extra comma in the end
+						//c->top = old_top;
+						ret = CJSON_PARSE_INVALID_VALUE;
+						break;
+						//CJSON_PARSE_ARRAY_EXTRA_COMMA;//ERROR -> extra comma in the end
 					}
-					break;
-				default:
-					c->top = old_top;
-					return CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET;
 				}
+				//break;
+				else {
+					//c->top = old_top;
+					ret = CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET;
+					break;
+				}
+				//}
 			}
 			else {
-				c->top = old_top;
-				return ret;
+				//c->top = old_top;
+				break;
+				//return ret;
 			}
-
-			break;
 		}
-		//NOT_SINGULAR don't need to be done here
-		//c->json++;
 	}
+	//release mem
+	for (unsigned i = 0;i < array_size;i++)cjson_free((cjson_value*)cjson_context_pop(c, sizeof(cjson_value)));
+	c->top = old_top;
+	return ret;
 }
 
 size_t get_array_size(const cjson_value* v)
