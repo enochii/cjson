@@ -25,19 +25,28 @@ enum {
 	CJSON_PARSE_INVALID_UNICODE_HEX,
 	CJSON_PARSE_INVALID_UNICODE_SURROGATE,
 	CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET,
-	CJSON_PARSE_ARRAY_EXTRA_COMMA,//extra comma in the end, like [1,2,]
+	//CJSON_PARSE_ARRAY_EXTRA_COMMA,//extra comma in the end, like [1,2,]
+	CJSON_PARSE_OBJECT_MISS_COLON,
+	CJSON_PARSE_OBJECT_MISS_KEY,
+	CJSON_PARSE_OBJECT_MISS_COMMA_OR_CURLY_BRACKET,
 };
 
+typedef struct member member;//member of object
 typedef struct cjson_value cjson_value;
 struct cjson_value {
 	cjson_type type;
 	union {
-		struct { cjson_value* arr;size_t array_size; };
-		struct { char* s;size_t len; };//
-		double n;//存储number的数值
+		struct { member* members; size_t mem_size; };//object
+		struct { cjson_value* arr;size_t array_size; };//array
+		struct { char* s;size_t len; };//string
+		double n;//number
 	};
 };
-
+struct member {
+	char* key;
+	size_t key_lengh;
+	cjson_value value;
+};
 //cjson_value由用户提供
 int cjson_parse(cjson_value* v, const char* json);
 
@@ -60,5 +69,13 @@ void set_string(cjson_value* v, const char* s, unsigned len);
 
 size_t get_array_size(const cjson_value* v);
 cjson_value* get_array_element(cjson_value* v, size_t index);
+
+size_t get_object_size(const cjson_value* v);
+const char* cjson_get_object_key(const cjson_value* v, size_t index);
+size_t cjson_get_object_key_length(const cjson_value* v, size_t index);
+cjson_value* cjson_get_object_value(const cjson_value* v, size_t index);
+
+
+cjson_value* get_object_value(const cjson_value* v, const char* key);
 
 #endif	/*CJSON_H_*/

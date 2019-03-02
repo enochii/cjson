@@ -2,7 +2,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include <stdlib.h>  
-//#include <crtdbg.h>
+#include <crtdbg.h>
 
 #ifndef CJSON_PARSE_STACK_INIT_SIZE
 #define CJSON_PARSE_STACK_INIT_SIZE 256
@@ -108,6 +108,7 @@ static int cjson_parse_literal(cjson_value* v, cjson_context* c,
 	return CJSON_PARSE_OK;
 }
 //
+static int cjson_parse_object(cjson_value* v, cjson_context* c);
 static int cjson_parse_string(cjson_value* v, cjson_context* c);
 static int cjson_parse_array(cjson_value* v, cjson_context*c);
 static int cjson_parse_value(cjson_value* v, cjson_context* c)
@@ -119,6 +120,7 @@ static int cjson_parse_value(cjson_value* v, cjson_context* c)
 	case '\0':return CJSON_PARSE_EXPECT_VALUE;
 	case '\"':return cjson_parse_string(v, c);
 	case '[':return cjson_parse_array(v, c);
+	case '{':return cjson_parse_object(v, c);
 	default:return cjson_parse_number(v, c);
 	}
 }
@@ -176,8 +178,27 @@ void set_number_value(cjson_value* v, double n)
 
 void cjson_free(cjson_value* v)
 {
+	//release the memory held inside v
 	assert(v != NULL);
-	if (v->type == CJSON_STRING) { free(v->s); }
+	switch (v->type) {
+	case CJSON_STRING:
+		free(v->s);
+		break;
+	case CJSON_ARRAY:
+		for (unsigned i = 0;i < v->array_size;i++) cjson_free(&v->arr[i]);//recursion
+		free(v->arr);
+		break;
+	case CJSON_OBJECT:
+		for (unsigned i = 0;i < v->mem_size;i++) {
+			free(v->members[i].key);
+			cjson_free(&v->members[i].value);
+		}
+		free(v->members);
+		break;
+	default:
+		break;
+	}
+	
 	v->type = CJSON_NULL;
 }
 
@@ -204,14 +225,24 @@ unsigned get_string_length(const cjson_value* v)
 	return v->len;
 }
 
+void set_string_raw(char** dest, const char* s, unsigned len)
+{
+	*dest = (char*)malloc(len + 1);
+	memcpy(*dest, s, len);
+	(*dest)[len] = '\0';
+}
+
 void set_string(cjson_value* v, const char* s, unsigned len)
 {
 	assert(v != NULL && (s != NULL || len == 0));
 	cjson_free(v);
 
+	/*
 	v->s = (char*)malloc(len + 1);
 	memcpy(v->s, s, len);
 	v->s[len] = '\0';
+	*/
+	set_string_raw(&(v->s), s, len);
 	v->len = len;
 	v->type = CJSON_STRING;
 }
@@ -337,12 +368,12 @@ static void cjson_encode_utf8(cjson_context *c, unsigned u)
 
 #define STRING_ERROR(ret) do{c->top = old_top;return ret;}while(0)
 
-static int cjson_parse_string(cjson_value* v, cjson_context* c)
+static int cjson_parse_string_raw(cjson_context* c)
 {
 	EXPECT(c, '\"');
 	unsigned u;
 	const char* p = c->json;
-	unsigned old_top = c->top, len;
+	unsigned old_top = c->top;
 	//
 	//int ret;
 	for (;;) {
@@ -350,8 +381,8 @@ static int cjson_parse_string(cjson_value* v, cjson_context* c)
 		switch (ch) {
 		case '\"':
 			c->json = p;//skip
-			len = c->top - old_top;
-			set_string(v, (const char*)(cjson_context_pop(c, len)), len);
+			//len = c->top - old_top;
+			//set_string(v, (const char*)(cjson_context_pop(c, len)), len);
 			return CJSON_PARSE_OK;
 		case '\0':
 			c->top = old_top;//roll back
@@ -412,6 +443,19 @@ static int cjson_parse_string(cjson_value* v, cjson_context* c)
 	}
 }
 
+static int cjson_parse_string(cjson_value* v, cjson_context* c)
+{
+	unsigned old_top = c->top, len;
+	int ret = cjson_parse_string_raw(c);
+	if (ret == CJSON_PARSE_OK) {
+		len = c->top - old_top;
+		set_string(v, cjson_context_pop(c, len), len);
+	}
+	else {
+		//c->top = old_top;
+	}
+	return ret;
+}
 
 static int cjson_parse_array(cjson_value* v, cjson_context* c)
 {
@@ -493,18 +537,132 @@ static int cjson_parse_array(cjson_value* v, cjson_context* c)
 	}
 }
 
-
 size_t get_array_size(const cjson_value* v)
 {
 	assert(v != NULL && v->type == CJSON_ARRAY);
 	return v->array_size;
 }
-
-//下表从0开始
+//index starts from zero
 cjson_value* get_array_element(cjson_value* v, size_t index)
 {
 	assert(v != NULL && v->type == CJSON_ARRAY);
 	assert(index < v->array_size);
 	//code like : return &v->arr[0]; doesnt work... //error -> expression must be a pointer to a complete object type
 	return &(((cjson_value*)v->arr)[index]);
+}
+
+#define OBJECT_ERROR(ERROR_CODE)\
+	do{\
+	c->top = old_top;\
+	free(m.key);\
+	m.key = NULL;\
+	member* context_mems = (member*)cjson_context_pop(c,mem_size*sizeof(member));\
+	for(unsigned i = 0;i<mem_size;i++){\
+		free(context_mems[i].key);\
+		context_mems[i].key = NULL;\
+		cjson_free(&context_mems[i].value);\
+		}\
+	v->type = CJSON_NULL;\
+	return ERROR_CODE;\
+	}while(0)
+	
+static int cjson_parse_object(cjson_value* v, cjson_context* c)
+{
+	EXPECT(c, '{');
+	//unlike the array parsing, we specify the case "{}"
+	//it can reduce some complications when parsing the members
+	//both are ok
+	cjson_parse_whitespace(c);
+	if (*c->json == '}') {
+		c->json++;
+		v->type = CJSON_OBJECT;
+		v->members = NULL;
+		v->mem_size = 0;
+		return CJSON_PARSE_OK;
+	}
+
+	int ret;
+	unsigned old_top = c->top, len;
+	member m;
+	unsigned mem_size = 0;
+	for (;;) {
+		//key part
+		cjson_parse_whitespace(c);
+		unsigned key_start = c->top;//note here...
+		if ((ret = cjson_parse_string_raw(c)) != CJSON_PARSE_OK) {
+			OBJECT_ERROR(CJSON_PARSE_OBJECT_MISS_KEY);
+		}
+		len = c->top - key_start;
+		//free(m.key);
+		set_string_raw(&m.key, cjson_context_pop(c, len), len);
+		m.key_lengh = len;
+		cjson_parse_whitespace(c);
+		if (*c->json++ != ':') {
+			OBJECT_ERROR(CJSON_PARSE_OBJECT_MISS_COLON);
+		}// end of key part
+		//value part
+		cjson_value* mv = &m.value;
+		cjson_init(mv);
+		cjson_parse_whitespace(c);
+		if ((ret = cjson_parse_value(mv, c)) != CJSON_PARSE_OK) {
+			OBJECT_ERROR(ret);
+		}
+		*(member*)cjson_context_push(c, sizeof(member)) = m;
+		mem_size++;
+		cjson_parse_whitespace(c);
+		switch (*c->json) {
+		case ',':
+			c->json++;
+			break;
+		case '}':
+			c->json++;
+			v->type = CJSON_OBJECT;
+			len = sizeof(member)*mem_size;
+			v->members = malloc(len);
+#ifdef DEBUG
+			printf("object size is %d\n", mem_size);
+#endif // DEBUG
+			memcpy(v->members, cjson_context_pop(c, len), len);
+			v->mem_size = mem_size;
+			return CJSON_PARSE_OK;
+		default:
+			OBJECT_ERROR(CJSON_PARSE_OBJECT_MISS_COMMA_OR_CURLY_BRACKET);
+			//break;
+		}
+	}
+}
+
+size_t get_object_size(const cjson_value* v)
+{
+	assert(v != NULL && v->type == CJSON_OBJECT);
+	return v->mem_size;
+}
+const char* cjson_get_object_key(const cjson_value* v, size_t index)
+{
+	assert(v != NULL && v->type == CJSON_OBJECT);
+	assert(index < v->mem_size);
+	return v->members[index].key;
+}
+size_t cjson_get_object_key_length(const cjson_value* v, size_t index)
+{
+	assert(v != NULL && v->type == CJSON_OBJECT);
+	assert(index < v->mem_size);
+	return strlen(v->members[index].key);
+}
+cjson_value* cjson_get_object_value(const cjson_value* v, size_t index)
+{
+	assert(v != NULL && v->type == CJSON_OBJECT);
+	assert(index < v->mem_size);
+	return &v->members[index].value;
+}
+
+cjson_value* get_object_value(const cjson_value* v, const char* key)
+{
+	assert(v != NULL && v->type == CJSON_OBJECT);
+	for (unsigned i = 0;i < v->mem_size;i++) {
+		if (strcmp((v->members[i]).key, key) == 0) {
+			return &v->members[i].value;
+		}
+	}
+	return NULL;
 }

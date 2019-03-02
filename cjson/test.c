@@ -1,8 +1,11 @@
-﻿#define _CRTDBG_MAP_ALLOC  
+﻿#ifndef _DEBUG
+#define _DEBUG
+#endif
+#define _CRTDBG_MAP_ALLOC  
 #define _CRT_SECURE_NO_WARNINGS
 
 #include <stdlib.h>  
-//#include <crtdbg.h>
+#include <crtdbg.h>
 
 #include <stdio.h>
 #include "cjson.h"
@@ -332,8 +335,8 @@ static void test_parse_miss_comma_or_square_bracket() {
 	TEST_ERROR(CJSON_PARSE_ARRAY_MISS_COMMA_OR_SQUARE_BRACKET, "[[]");
 #endif
 }
-//milo's tutorial include it in INVALID_VALUE, that's better than my solution, cause we have case like [,]
-//though we can do specified thing to it, but i prefer to follow milo's, cause i'm lazy...
+//milo's tutorial include it in INVALID_VALUE, that's better than my solution, in which i handle EXTRA_COMMA as isolated case,
+//cause we have case like "[,]". though we can do specified thing to it, but i prefer to follow milo's, cause i'm lazy...
 /*
 static void test_parse_array_extra_comma() {
 	TEST_ERROR(CJSON_PARSE_ARRAY_EXTRA_COMMA, "[1,2,]");
@@ -341,6 +344,97 @@ static void test_parse_array_extra_comma() {
 	TEST_ERROR(CJSON_PARSE_ARRAY_EXTRA_COMMA, "[,]");
 }
 */
+
+static void test_parse_object()
+{
+	cjson_value v;
+	cjson_init(&v);
+	EXPECT_EQ_INT(CJSON_PARSE_OK, cjson_parse(&v, "{}"));
+	EXPECT_EQ_INT(0, get_object_size(&v));
+
+	cjson_init(&v);
+	EXPECT_EQ_INT(CJSON_PARSE_OK, cjson_parse(&v, "{\"key\":1,\"key1\":2,\"key2\":{\"key\":1}}"));//
+	EXPECT_EQ_INT(3, get_object_size(&v));
+	EXPECT_EQ_INT(3, cjson_get_object_key_length(&v, 0));
+	EXPECT_EQ_INT(CJSON_NUMBER, get_type(cjson_get_object_value(&v, 0)));
+	EXPECT_EQ_DOUBLE(1.0, get_number_value(cjson_get_object_value(&v, 0)));
+	EXPECT_EQ_INT(CJSON_OBJECT, get_type(cjson_get_object_value(&v, 2)));
+	EXPECT_EQ_INT(1, get_object_size(cjson_get_object_value(&v, 2)));
+	//
+	cjson_init(&v);
+	EXPECT_EQ_INT(CJSON_PARSE_OK, cjson_parse(&v,
+		" { "
+		"\"n\" : null , "
+		"\"f\" : false , "
+		"\"t\" : true , "
+		"\"i\" : 123 , "
+		"\"s\" : \"abc\", "
+		"\"a\" : [ 1, 2, 3 ],"
+		"\"o\" : { \"1\" : 1, \"2\" : 2, \"3\" : 3 }"
+		" } "
+	));
+	EXPECT_EQ_INT(CJSON_OBJECT, get_type(&v));
+	EXPECT_EQ_INT(7, get_object_size(&v));
+#if 1
+	EXPECT_EQ_STRING("n", cjson_get_object_key(&v, 0), cjson_get_object_key_length(&v, 0));
+	EXPECT_EQ_INT(CJSON_NULL, get_type(cjson_get_object_value(&v, 0)));
+	EXPECT_EQ_STRING("f", cjson_get_object_key(&v, 1), cjson_get_object_key_length(&v, 1));
+	EXPECT_EQ_INT(CJSON_FALSE, get_type(cjson_get_object_value(&v, 1)));
+	EXPECT_EQ_STRING("t", cjson_get_object_key(&v, 2), cjson_get_object_key_length(&v, 2));
+	EXPECT_EQ_INT(CJSON_TRUE, get_type(cjson_get_object_value(&v, 2)));
+	EXPECT_EQ_STRING("i", cjson_get_object_key(&v, 3), cjson_get_object_key_length(&v, 3));
+	EXPECT_EQ_INT(CJSON_NUMBER, get_type(cjson_get_object_value(&v, 3)));
+	EXPECT_EQ_DOUBLE(123.0, get_number_value(cjson_get_object_value(&v, 3)));
+	EXPECT_EQ_STRING("s", cjson_get_object_key(&v, 4), cjson_get_object_key_length(&v, 4));
+	EXPECT_EQ_INT(CJSON_STRING, get_type(cjson_get_object_value(&v, 4)));
+	EXPECT_EQ_STRING("abc", get_string(cjson_get_object_value(&v, 4)), get_string_length(cjson_get_object_value(&v, 4)));
+	EXPECT_EQ_STRING("a", cjson_get_object_key(&v, 5), cjson_get_object_key_length(&v, 5));
+	EXPECT_EQ_INT(CJSON_ARRAY, get_type(cjson_get_object_value(&v, 5)));
+	EXPECT_EQ_INT(3, get_array_size(cjson_get_object_value(&v, 5)));
+	int i;
+	for (i = 0; i < 3; i++) {
+		cjson_value* e = get_array_element(cjson_get_object_value(&v, 5), i);
+		EXPECT_EQ_INT(CJSON_NUMBER, get_type(e));
+		EXPECT_EQ_DOUBLE(i + 1.0, get_number_value(e));
+	}
+	EXPECT_EQ_STRING("o", cjson_get_object_key(&v, 6), cjson_get_object_key_length(&v, 6));
+	{
+		cjson_value* o = cjson_get_object_value(&v, 6);
+		EXPECT_EQ_INT(CJSON_OBJECT, get_type(o));
+		for (i = 0; i < 3; i++) {
+			cjson_value* ov = cjson_get_object_value(o, i);
+			assert('1' + i == cjson_get_object_key(o, i)[0]);
+			EXPECT_EQ_INT(1, cjson_get_object_key_length(o, i));
+			EXPECT_EQ_INT(CJSON_NUMBER, get_type(ov));
+			EXPECT_EQ_DOUBLE(i + 1.0, get_number_value(ov));
+		}
+	}
+#endif
+	cjson_free(&v);
+}
+
+static void test_parse_miss_comma_or_curly_bracket() {
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_COMMA_OR_CURLY_BRACKET, "[1");
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_COMMA_OR_CURLY_BRACKET, "[1}");
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_COMMA_OR_CURLY_BRACKET, "[1 2");
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_COMMA_OR_CURLY_BRACKET, "[[]");
+}
+
+static void test_parse_miss_key() {
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_KEY, "{:1,");
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_KEY, "{1:1,");
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_KEY, "{true:1,");
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_KEY, "{false:1,");
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_KEY, "{null:1,");
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_KEY, "{[]:1,");
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_KEY, "{{}:1,");
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_KEY, "{\"a\":1,");
+}
+
+static void test_parse_miss_colon() {
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_COLON, "{\"a\"}");
+	TEST_ERROR(CJSON_PARSE_OBJECT_MISS_COLON, "{\"a\",\"b\"}");
+}
 
 void test_parse()
 {
@@ -364,6 +458,7 @@ void test_parse()
 	test_parse_array();
 	test_parse_miss_comma_or_square_bracket();
 	//test_parse_array_extra_comma();
+	test_parse_object();
 
 	if (main_ret == 0) {
 		printf("ok no problem!\n");
@@ -372,6 +467,7 @@ void test_parse()
 
 int main()
 {
+	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 	malloc(sizeof(char));
 	//_CrtDumpMemoryLeaks();
 	//printf("%d %d", sizeof(char), sizeof('\n'));
