@@ -461,9 +461,55 @@ void test_parse()
 	//test_parse_array_extra_comma();
 	test_parse_object();
 
-	if (main_ret == 0) {
-		printf("ok no problem!\n");
-	}
+	
+}
+
+#define TEST_ROUNDTRIP(json)\
+	do{\
+		cjson_value v;\
+		cjson_init(&v);\
+		EXPECT_EQ_INT(CJSON_PARSE_OK,cjson_parse(&v,json));\
+		char *json_;\
+		size_t len;\
+		json_ = cjson_stringify(&v,&len);\
+		EXPECT_EQ_STRING(json, json_, len);\
+		free(json_);\
+		cjson_free(&v);\
+	}while(0)
+
+
+static void test_stringfy()
+{
+	TEST_ROUNDTRIP("null");
+	TEST_ROUNDTRIP("false");
+	TEST_ROUNDTRIP("true");
+	TEST_ROUNDTRIP("1.0");
+	TEST_ROUNDTRIP("1.111111");
+
+	TEST_ROUNDTRIP("\"schsb\"");
+	TEST_ROUNDTRIP("\"\"");
+	TEST_ROUNDTRIP("\"Hello\"");
+#if 1
+	TEST_ROUNDTRIP("\"Hello\\nWorld\"");
+	//TEST_ROUNDTRIP("\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t\""); //issue82
+	TEST_ROUNDTRIP("\"\"");
+	TEST_ROUNDTRIP("\"Hello\"");
+	TEST_ROUNDTRIP("\"Hello\\nWorld\"");
+	TEST_ROUNDTRIP("\"\\\" \\\\ / \\b \\f \\n \\r \\t\"");
+	TEST_ROUNDTRIP("\"Hello\\u0000World\"");
+#endif
+	TEST_ROUNDTRIP("[]");
+	TEST_ROUNDTRIP("[null,false,true,123,\"abc\",[1,2,3]]");
+
+	TEST_ROUNDTRIP("{}");
+	TEST_ROUNDTRIP("{\"n\":null,\"f\":false,\"t\":true,\"i\":123,\"s\":\"abc\",\"a\":[1,2,3],\"o\":{\"1\":1,\"2\":2,\"3\":3}}");
+#if 0
+	TEST_ROUNDTRIP("\"\\u0024\"");         /* Dollar sign U+0024 */
+	TEST_ROUNDTRIP("\"\\u00A2\"");     /* Cents sign U+00A2 */
+	TEST_ROUNDTRIP("\"\\u20AC\""); /* Euro sign U+20AC */
+	TEST_ROUNDTRIP("\"\\uD834\\uDD1E\"");  /* G clef sign U+1D11E */
+	TEST_ROUNDTRIP("\"\\ud834\\udd1e\"");  /* G clef sign U+1D11E */
+#endif // 0
 }
 
 int main()
@@ -473,13 +519,12 @@ int main()
 	//_CrtDumpMemoryLeaks();
 	//printf("%d %d", sizeof(char), sizeof('\n'));
 	test_parse();
-
+	test_stringfy();
+	//
+	if (main_ret == 0) {
+		printf("ok no problem!\n");
+	}
 	getchar();
-
-	/*
-	char ch;
-	printf("%d %d %d", sizeof(ch), sizeof(char), sizeof('a'));
-	*/
 	
 	/*
 	int i;

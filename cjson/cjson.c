@@ -1,3 +1,6 @@
+#ifndef _DEBUG
+#define _DEBUG
+#endif
 #define _CRTDBG_MAP_ALLOC  
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -661,13 +664,140 @@ cjson_value* cjson_get_object_value(const cjson_value* v, size_t index)
 	return &v->members[index].value;
 }
 
-cjson_value* get_object_value(const cjson_value* v, const char* key)
+//stringfy
+#ifndef CJSON_STRINGFY_INIT_SIZE
+#define CJSON_STRINGFY_INIT_SIZE 256
+#endif
+static void cjson_stringify_literal(cjson_context* c, const char* json)
 {
-	assert(v != NULL && v->type == CJSON_OBJECT);
-	for (unsigned i = 0;i < v->mem_size;i++) {
-		if (strcmp((v->members[i]).key, key) == 0) {
-			return &v->members[i].value;
+	unsigned len = strlen(json);
+	memcpy(cjson_context_push(c, len), json, len);
+}
+#define PUTEC(c,ch) do{PUTC(c,'\\');PUTC(c,ch);}while(0)
+#define PUTS(c,s,len) memcpy(cjson_context_push(c,len),s,len)
+
+static void cjson_stringify_string(const char* s, cjson_context* c, size_t len )
+{
+	PUTC(c, '\"');
+	for (size_t i = 0;i < len;i++) {
+		unsigned char ch = (unsigned char)s[i];
+		switch (ch)
+		{
+		case '\n':PUTEC(c, 'n');break;
+		case '\r':PUTEC(c, 'r');break;
+		case '\b':PUTEC(c, 'b');break;
+		case '\f':PUTEC(c, 'f');break;
+		case '\t':PUTEC(c, 't');break;
+		case '\\':PUTEC(c, '\\');break;
+			//case '/':PUTEC(c, '/');break;
+		case '\"':PUTEC(c, '\"');break;
+		default:
+			//TODO:0X20
+			if (ch < 0x20) {
+				char buffer[7];
+				sprintf(buffer, "\\u%04X", ch);
+				PUTS(c, buffer, 6);
+			}
+			else PUTC(c, s[i]);
+			break;
 		}
 	}
-	return NULL;
+	PUTC(c, '\"');
+}
+
+static int cjson_stringify_value(const cjson_value* v, cjson_context* c);
+void cjson_stringify_array(const cjson_value* v, cjson_context* c)
+{
+	PUTC(c, '[');
+	size_t len = v->len;
+	for (size_t i = 0;i < len;i++) {
+		//size_t len_;
+		//char*buffer = cjson_stringify(&v->arr[i], &len_);
+		//PUTS(c, buffer, len_);
+		//free(buffer);
+		cjson_stringify_value(&v->arr[i], c);
+		if (i < len - 1)
+			PUTC(c, ',');
+	}
+	PUTC(c, ']');
+}
+void cjson_stringify_object(const cjson_value* v, cjson_context* c)
+{
+	PUTC(c,'{');
+	for (size_t i = 0;i < v->mem_size;i++) {
+		member *m = &v->members[i];
+		cjson_stringify_string(m->key, c, m->key_lengh);
+		PUTC(c, ':');
+		size_t len = 0;
+		char* res = cjson_stringify(&m->value, &len);
+		assert(len != 0);
+		PUTS(c, res, len);
+		if (i != v->mem_size - 1)PUTC(c, ',');
+	}
+	PUTC(c, '}');
+}
+
+static int cjson_stringify_value(const cjson_value* v, cjson_context* c)
+{
+	switch (v->type)
+	{
+	case CJSON_NULL:
+		cjson_stringify_literal(c, "null");
+		break;
+	case CJSON_TRUE:
+		cjson_stringify_literal(c, "true");
+		break;
+	case CJSON_FALSE:
+		cjson_stringify_literal(c, "false");
+		break;
+	case CJSON_NUMBER:
+	{
+		size_t len = sprintf(cjson_context_push(c, 32), "%.17g", get_number_value(v));
+		c->top -= 32 - len;
+		break;
+	}
+	case CJSON_STRING:
+		cjson_stringify_string(v->s, c, v->len);
+		break;
+	case CJSON_ARRAY:
+		cjson_stringify_array(v, c);
+		break;
+	case CJSON_OBJECT:
+		cjson_stringify_object(v, c);
+		break;
+	default:
+		break;
+	}
+	return CJSON_STRINGFY_OK;
+}
+char* cjson_stringify(const cjson_value* v, size_t * length)
+{
+	assert(v != NULL);
+	cjson_context c;
+	c.stack = (char*)malloc(c.size = CJSON_STRINGFY_INIT_SIZE);
+	c.top = 0;
+	int ret = cjson_stringify_value(v, &c);
+	if (ret != CJSON_STRINGFY_OK) {
+		free(c.stack);
+		return NULL;
+	}
+	//ok
+	if (length!=NULL)*length = c.top;
+	PUTC(&c, '\0');
+	return c.stack;
+}
+
+#define CJSON_KEY_NOT_EXIST ((size_t)-1)
+size_t cjson_find_object_index(const cjson_value* v, const char* key, size_t len)
+{
+	assert(v != NULL && v->type == CJSON_OBJECT && key != NULL);
+	for (size_t i = 0;i < v->mem_size;i++) {
+		if (len == v->members[i].key_lengh&&memcmp(v->members[i].key, key, len) == 0)return i;
+	}
+	return CJSON_KEY_NOT_EXIST;
+}
+cjson_value* cjson_find_object_value(cjson_value*v, const char* key, size_t klen)
+{
+	size_t i = cjson_find_object_index(v, key, klen);
+	return CJSON_KEY_NOT_EXIST == i ? NULL : v->members[i];
 }

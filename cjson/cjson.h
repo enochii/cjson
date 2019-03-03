@@ -1,3 +1,6 @@
+#ifndef _DEBUG
+#define _DEBUG
+#endif
 #ifndef CJSON_H_
 #define CJSON_H_
 
@@ -75,7 +78,9 @@ const char* cjson_get_object_key(const cjson_value* v, size_t index);
 size_t cjson_get_object_key_length(const cjson_value* v, size_t index);
 cjson_value* cjson_get_object_value(const cjson_value* v, size_t index);
 
-
-cjson_value* get_object_value(const cjson_value* v, const char* key);
+enum {
+	CJSON_STRINGFY_OK,
+};
+char* cjson_stringify(const cjson_value* v, size_t * length);
 
 #endif	/*CJSON_H_*/
